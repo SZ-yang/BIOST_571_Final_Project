@@ -1,0 +1,171 @@
+---
+title: "DataGeneration_Simulation"
+author: "Shizhao_Yang"
+date: "2025-03-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+#-------------------------------------
+# Realistic RNA-seq Data Simulation
+#-------------------------------------
+library(MASS)
+library(dplyr)
+library(matrixStats)
+
+set.seed(571)
+
+# Parameters
+n_genes <- 10000       # Total genes
+n_de <- 500            # 5% DE genes
+n_subjects <- 20       # 10 control, 10 case
+base_mean <- 50        # Baseline mean (control)
+dispersion <- 0.1      # NB dispersion
+effect_sizes <- rnorm(n_de, mean = 1.2, sd = 0.5)  # Variable log2 fold changes
+
+# 1. Simulate baseline expression (log-normal distribution)
+# Real RNA-seq data: few highly expressed genes, many lowly expressed
+base_means <- rlnorm(n_genes, meanlog = log(base_mean), sdlog = 0.5)
+
+# 2. Introduce gene-specific dispersion (mean-dispersion trend)
+# Higher dispersion for lowly expressed genes (as in DESeq2)
+dispersion <- 0.1 + 1/base_means  # Inverse relationship
+
+# 3. Library size variation (technical noise)
+library_sizes <- rlnorm(n_subjects * 2, meanlog = log(1e6), sdlog = 0.2)
+
+# 4. Subject-level random effects (N(0, 1))
+subject_re <- rnorm(n_subjects, mean = 0, sd = 1)
+
+# 5. Simulate counts with correlation and biological realism
+simulate_rnaseq <- function() {
+  design <- data.frame(
+    subject_id = rep(1:n_subjects, each = 2), # Paired design
+    condition = rep(c("control", "case"), times = n_subjects)
+  )
+  
+  counts <- sapply(1:n_genes, function(g) {
+    # Differential expression
+    if (g <= n_de) {
+      mu <- ifelse(design$condition == "case", 
+                   base_means[g] * 2^effect_sizes[g], 
+                   base_means[g])
+    } else {
+      mu <- base_means[g]
+    }
+    
+    # Add subject-level random effect and library size
+    mu <- mu * exp(0.3 * subject_re[design$subject_id])  # Moderate ICC
+    mu <- mu * library_sizes / median(library_sizes)     # Scale by library size
+    
+    # Negative binomial counts
+    counts_g <- rnbinom(n = nrow(design), size = 1/dispersion[g], mu = mu)
+    
+    # Add dropout zeros (10% excess zeros)
+    zeros <- sample(1:length(counts_g), size = 0.1 * length(counts_g))
+    counts_g[zeros] <- 0
+    counts_g
+  })
+  
+  colnames(counts) <- paste0("Gene", 1:n_genes)
+  return(list(counts = counts, design = design))
+}
+
+# Generate data
+rnaseq_data_subject <- simulate_rnaseq()
+
+#-------------------------------------
+# Validation of Realism
+#-------------------------------------
+# 1. Mean-variance relationship
+plot(rowMeans(rnaseq_data_subject$counts), rowVars(rnaseq_data_subject$counts),
+     xlab = "Mean", ylab = "Variance", main = "Mean-Variance Trend")
+
+# 2. Distribution of log2 fold changes (DE genes)
+hist(effect_sizes, breaks = 30, main = "Log2 Fold Changes (DE Genes)")
+
+# 3. Intra-class correlation (ICC) for subject effects
+icc <- var(subject_re) / (var(subject_re) + 1)
+icc
+```
+
+```{r}
+simulate_rnaseq_family <- function() {
+  # Assume 4 subjects per family
+  n_families <- n_subjects / 4  # Ensure n_subjects is a multiple of 4
+  # Create family assignment: subjects 1-4 in family 1, 5-8 in family 2, etc.
+  family_ids <- rep(1:n_families, each = 4)
+  
+  # Design: two observations per subject (paired design)
+  design <- data.frame(
+    subject_id = rep(1:n_subjects, each = 2),
+    family_id = rep(family_ids, each = 2),
+    condition = rep(c("control", "case"), times = n_subjects)
+  )
+  
+  # Generate family-level random effects (e.g., N(0, 1))
+  family_re <- rnorm(n_families, mean = 0, sd = 1)
+  
+  counts <- sapply(1:n_genes, function(g) {
+    # Differential expression for DE genes
+    if (g <= n_de) {
+      mu <- ifelse(design$condition == "case", 
+                   base_means[g] * 2^effect_sizes[g], 
+                   base_means[g])
+    } else {
+      mu <- base_means[g]
+    }
+    
+    # Add subject-level random effect
+    mu <- mu * exp(0.3 * subject_re[design$subject_id])
+    # Add family-level random effect: assign corresponding family effect
+    mu <- mu * exp(0.3 * family_re[design$family_id])
+    # Adjust for library size variation
+    mu <- mu * library_sizes / median(library_sizes)
+    
+    # Generate negative binomial counts
+    counts_g <- rnbinom(n = nrow(design), size = 1/dispersion[g], mu = mu)
+    
+    # Add dropout zeros (10% excess zeros)
+    zeros <- sample(1:length(counts_g), size = 0.1 * length(counts_g))
+    counts_g[zeros] <- 0
+    counts_g
+  })
+  
+  colnames(counts) <- paste0("Gene", 1:n_genes)
+  return(list(counts = counts, design = design))
+}
+
+# Generate family-level correlated data
+rnaseq_data_family <- simulate_rnaseq_family()
+
+plot(rowMeans(rnaseq_data_family$counts), rowVars(rnaseq_data_family$counts),
+     xlab = "Mean", ylab = "Variance", main = "Mean-Variance Trend")
+```
+
+```{r}
+save(rnaseq_data_subject, rnaseq_data_family, file = "simulated_rnaseq_data.RData")
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+```{r}
+
+```
+
+
