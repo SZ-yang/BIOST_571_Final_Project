@@ -142,3 +142,31 @@ results <- data.frame(
 )
 
 rownames(results) <- rownames(edgeR_res$table)
+
+
+### calculate power for each method
+# Step 1: Subset the rows gene1 to gene500
+genes_to_select <- paste0("Gene", 1:500)
+power_df <- results[genes_to_select, ] 
+
+# Step 2: Apply the condition per column and count values <= 0.05
+power_count_values_per_column <- apply(power_df, 2, function(x) sum(x <= 0.05))
+
+# Output the result
+power_count_values_per_column / nrow(power_df)
+
+### calculate FDR for each method
+# Step 1: Subset the rows gene1 to gene500
+genes_to_select <- paste0("Gene", 501:nrow(results))
+fdr_df <- results[genes_to_select, ] 
+
+# Step 2: Apply the condition per column and count values <= 0.05
+fdr_count_values_per_column <- apply(fdr_df, 2, function(x) sum(x <= 0.05, na.rm = TRUE))
+
+# Output the result
+fdr_count_values_per_column / nrow(fdr_df)
+
+data.frame(
+  power = power_count_values_per_column / nrow(power_df),
+  fdr = fdr_count_values_per_column / nrow(fdr_df)
+)
