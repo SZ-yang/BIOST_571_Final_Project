@@ -3,9 +3,9 @@ library(DESeq2)
 library(lmerSeq)
 library(tidyr)
 
-load("/Users/amywatt1/Documents/UW/BIOST_571_Final_Project/simulated_rnaseq_data.RData")
-rnaseq_data_family$counts[1:5, 1:5]
-head(rnaseq_data_family$design)
+load("/Users/amywatt1/Documents/UW/BIOST_571_Final_Project/simulated_rnaseq_data_new.RData")
+rnaseq_data_subject$counts[1:5, 1:5]
+head(rnaseq_data_subject$design)
 
 
 X <- as.data.frame(rnaseq_data_subject$design)
@@ -17,8 +17,9 @@ rownames(Y) <- rownames(X)
 head(X)
 head(t(Y)[1:5, 1:5])
 
-group <- factor(X$condition)
-design <- model.matrix(~group)
+condition <- factor(X$condition)
+time <- factor(X$time)
+design <- model.matrix(~ time*condition)
 
 #####################
 ## edgeR
@@ -27,9 +28,9 @@ design <- model.matrix(~group)
 # Create DGEList object
 d0 <- DGEList(counts = t(Y)) # func takes a df with rows as genes and columns as samples
 
-# Filter genes
-keep <- filterByExpr(d0, design)
-d0 <- d0[keep, , keep.lib.sizes=FALSE]
+# # Filter genes
+# keep <- filterByExpr(d0, design)
+# d0 <- d0[keep, , keep.lib.sizes=FALSE]
 
 # Normalization
 d0 <- normLibSizes(d0)
@@ -51,9 +52,9 @@ head(edgeR_res)
 # Create DGEList object
 d0 <- DGEList(counts = t(Y))
 
-# Filter genes
-keep <- filterByExpr(d0, design)
-d0 <- d0[keep, , keep.lib.sizes=FALSE]
+# # Filter genes
+# keep <- filterByExpr(d0, design)
+# d0 <- d0[keep, , keep.lib.sizes=FALSE]
 
 # Normalization
 d0 <- normLibSizes(d0)
@@ -75,21 +76,22 @@ head(limma_res)
 # Create DGEList object
 d0 <- DGEList(counts = t(Y)) # func takes a df with rows as genes and columns as samples
 
-# Filter genes
-keep <- filterByExpr(d0, design)
-d0 <- d0[keep, , keep.lib.sizes=FALSE]
+# # Filter genes
+# keep <- filterByExpr(d0, design)
+# d0 <- d0[keep, , keep.lib.sizes=FALSE]
 
 # Analysis is performed on simulated data transformed using the vst func in DESeq2
 Y_adjusted <- d0$counts + 1  # Add a pseudo-count to avoid zero values
 dds <- DESeqDataSetFromMatrix(countData = Y_adjusted,
                               colData = X,
-                              design = ~ condition)
+                              design = ~ time*condition)
 
 # run DESeq
 dds <- DESeq(dds)
 
 # get results
 de_res <- results(dds, tidy=TRUE)
+rownames(de_res) <- de_res$row
 head(de_res)
 
 #####################
@@ -99,22 +101,22 @@ head(de_res)
 # Create DGEList object
 d0 <- DGEList(counts = t(Y)) # func takes a df with rows as genes and columns as samples
 
-# Filter genes
-keep <- filterByExpr(d0, design)
-d0 <- d0[keep, , keep.lib.sizes=FALSE]
+# # Filter genes
+# keep <- filterByExpr(d0, design)
+# d0 <- d0[keep, , keep.lib.sizes=FALSE]
 
 # Analysis is performed on simulated data transformed using the vst func in DESeq2
 Y_adjusted <- d0$counts + 1  # Add a pseudo-count to avoid zero values
 dds <- DESeqDataSetFromMatrix(countData = Y_adjusted,
                               colData = X,
-                              design = ~ condition)
+                              design = ~ time*condition)
 dds <- DESeq(dds)
-vsd.fixed <- varianceStabilizingTransformation(dds, blind=F)
-vst_expr <- assay(vsd.fixed)
+dds_vst = varianceStabilizingTransformation(dds, blind = F, fitType = "parametric")
+expr_vst = assay(dds_vst)
 
 
 # Fit the Model
-fit.lmerSeq <- lmerSeq.fit(form = ~ condition + (1|subject_id),
+fit.lmerSeq <- lmerSeq.fit(form = ~ time*condition + (1|subject_id),
                            expr_mat = vst_expr,
                            sample_data = X,
                            REML = T)
@@ -126,6 +128,7 @@ lmer_res <- lmerSeq.summary(lmerSeq_results = fit.lmerSeq,
                                    ddf = 'Satterthwaite',
                                    sort_results = F, 
                                    include_singular = TRUE)
+rownames(lmer_res$summary_table) <- lmer_res$summary_table$gene
 
 head(lmer_res$summary_table)
 
@@ -133,24 +136,91 @@ head(lmer_res$summary_table)
 #########################
 ## Put the results together
 #########################
+head(edgeR_res$table)
+head(limma_res)
+head(de_res)
+head(lmer_res$summary_table)
 
-results <- data.frame(
-  edgeR = edgeR_res$table$FDR, 
-  limma = limma_res$adj.P.Val,
-  deseq = de_res$padj,
-  lmerSeq = lmer_res$summary_table$p_val_adj
-)
+results_padj <- edgeR_res$table["FDR"] %>% 
+  merge(
+    limma_res["adj.P.Val"], 
+    by = 0, 
+    all=TRUE
+  ) %>% 
+  transform(
+    row.names = Row.names, 
+    Row.names = NULL
+  ) %>%
+  merge(
+    de_res["padj"], 
+    by = 0, 
+    all=TRUE
+  ) %>%
+  transform(
+    row.names = Row.names, 
+    Row.names = NULL
+  ) %>%
+  merge(
+    lmer_res$summary_table["p_val_adj"], 
+    by = 0, 
+    all=TRUE
+  ) %>%
+  transform(
+    row.names = Row.names, 
+    Row.names = NULL
+  ) %>% 
+  rename(
+    "FDR" = "edgeR_FDR", 
+    "adj.P.Val" = "limma_padj", 
+    "padj" = "deseq_padj", 
+    "p_val_adj" = "lmerseq_padj"
+  ) %>%
+  as.data.frame()
 
-rownames(results) <- rownames(edgeR_res$table)
+results_p <- edgeR_res$table["PValue"] %>% 
+  merge(
+    limma_res["P.Value"], 
+    by = 0, 
+    all=TRUE
+  ) %>% 
+  transform(
+    row.names = Row.names, 
+    Row.names = NULL
+  ) %>%
+  merge(
+    de_res["pvalue"], 
+    by = 0, 
+    all=TRUE
+  ) %>%
+  transform(
+    row.names = Row.names, 
+    Row.names = NULL
+  ) %>%
+  merge(
+    lmer_res$summary_table["p_val_raw"], 
+    by = 0, 
+    all=TRUE
+  ) %>%
+  transform(
+    row.names = Row.names, 
+    Row.names = NULL
+  ) %>% 
+  rename(
+    "PValue" = "edgeR_p", 
+    "P.Value" = "limma_p", 
+    "pvalue" = "deseq_padj", 
+    "p_val_raw" = "lmerseq_p"
+  ) %>%
+  as.data.frame()
 
 
 ### calculate power for each method
 # Step 1: Subset the rows gene1 to gene500
 genes_to_select <- paste0("Gene", 1:500)
-power_df <- results[genes_to_select, ] 
+power_df <- results_p[genes_to_select, ] 
 
 # Step 2: Apply the condition per column and count values <= 0.05
-power_count_values_per_column <- apply(power_df, 2, function(x) sum(x <= 0.05))
+power_count_values_per_column <- apply(power_df, 2, function(x) sum(x <= 0.05, na.rm = TRUE))
 
 # Output the result
 power_count_values_per_column / nrow(power_df)
@@ -158,7 +228,7 @@ power_count_values_per_column / nrow(power_df)
 ### calculate FDR for each method
 # Step 1: Subset the rows gene1 to gene500
 genes_to_select <- paste0("Gene", 501:nrow(results))
-fdr_df <- results[genes_to_select, ] 
+fdr_df <- results_p[genes_to_select, ] 
 
 # Step 2: Apply the condition per column and count values <= 0.05
 fdr_count_values_per_column <- apply(fdr_df, 2, function(x) sum(x <= 0.05, na.rm = TRUE))
