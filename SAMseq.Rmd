@@ -1,0 +1,80 @@
+---
+title: "Samseq"
+author: "Xumeng Zhang"
+date: "2025-03-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+# Load libraries
+library(impute)
+library(samr)
+library(dplyr)
+# BiocManager::install("DESeq2")
+library(DESeq2)
+```
+
+```{r}
+# Load the simulated data
+load("simulated_rnaseq_data_50.RData")
+
+# Extract the counts and design for subject-level correlation
+counts_subject <- rnaseq_data_subject$counts
+design_subject <- rnaseq_data_subject$design
+```
+
+
+# Subject level
+
+```{r}
+# Prepare data for SAMseq
+y_paired <- c(rep(1:25), rep(1:25), rep(26:50), rep(26:50) ) # Assign a unique number to each subject
+y_paired[design_subject$condition == "control"] <- -y_paired[design_subject$condition == "control"]  # Negative for control
+samr_data_subject <- list(x = t(counts_subject), 
+                          y = y_paired, 
+                          geneid = colnames(counts_subject), 
+                          genenames = colnames(counts_subject), 
+                          logged2 = FALSE)
+
+# Run SAMseq
+samr_result_subject <- SAMseq(samr_data_subject$x, 
+                              samr_data_subject$y, 
+                              resp.type = "Two class paired", 
+                              nperms = 10)
+
+# Extract significant genes
+significant_genes_samseq_subject <- samr_result_subject$siggenes.table$genes.up
+significant_genes_samseq_subject
+```
+
+```{r}
+head(significant_genes_samseq_subject)
+```
+
+```{r}
+# Define ground truth
+ground_truth_de <- paste0("g", 1:500)  # First 500 genes are DE
+ground_truth_non_de <- paste0("", 501:10000)  # Remaining genes are non-DE
+
+# Extract significant genes from SAMseq results
+significant_genes <- significant_genes_samseq_subject[, "Gene ID"]
+
+# Calculate TP, FP, TN, FN
+TP <- sum(significant_genes %in% ground_truth_de)  # True positives
+FP <- sum(significant_genes %in% ground_truth_non_de)  # False positives
+TN <- sum(!(ground_truth_non_de %in% significant_genes))  # True negatives
+FN <- sum(!(ground_truth_de %in% significant_genes))  # False negatives
+
+# Calculate power and FDR
+power <- TP / (TP + FN)
+FDR <- FP / (TP + FP)
+
+# Print results
+cat("Power:", power, "\n")
+cat("FDR:", FDR, "\n")
+```

@@ -1,0 +1,82 @@
+---
+title: "NOIseq"
+author: "Xumeng Zhang"
+date: "2025-03-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(NOISeq)
+library(impute)
+library(samr)
+library(dplyr)
+```
+
+```{r}
+# Extract the counts and design for subject-level correlation
+counts_subject <- rnaseq_data_subject$counts
+design_subject <- rnaseq_data_subject$design
+
+# Create a NOISeq object
+noiseq_data_subject <- NOISeq::readData(
+  data = t(counts_subject),  # Counts matrix
+  factors = design_subject  # Sample information
+)
+
+```
+
+```{r}
+# Run NOIseq
+noiseq_result_subject <- NOISeq::noiseq(
+  input = noiseq_data_subject,  # NOISeq object
+  k = 0.5,  # Normalization factor (default is 0.5)
+  norm = "tmm",  # Normalization method (TMM is commonly used)
+  factor = "condition",  # Factor of interest (e.g., condition)
+  replicates = "no"  # Specify "no" if you don't have replicates
+)
+```
+
+```{r}
+significant_genes_noiseq <- noiseq_result_subject@results[[1]] %>%
+  filter(prob > 0.5) %>%  # Use a threshold (e.g., prob > 0.95)
+  rownames()  # Extract gene IDs
+```
+
+```{r}
+# Define ground truth
+ground_truth_de <- paste0("Gene", 1:500)  # First 500 genes are DE
+ground_truth_non_de <- paste0("Gene", 501:10000)  # Remaining genes are non-DE
+```
+
+```{r}
+# Calculate TP, FP, TN, FN
+TP <- sum(significant_genes_noiseq %in% ground_truth_de)  # True positives
+FP <- sum(significant_genes_noiseq %in% ground_truth_non_de)  # False positives
+TN <- sum(!(ground_truth_non_de %in% significant_genes_noiseq))  # True negatives
+FN <- sum(!(ground_truth_de %in% significant_genes_noiseq))  # False negatives
+# Calculate power
+power <- TP / (TP + FN)
+# Calculate FDR
+FDR <- FP / (TP + FP)
+# Print results
+cat("Power:", power, "\n")
+cat("FDR:", FDR, "\n")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
