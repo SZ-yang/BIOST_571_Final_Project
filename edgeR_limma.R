@@ -3,7 +3,7 @@ library(DESeq2)
 library(lmerSeq)
 library(tidyr)
 
-load("/Users/amywatt1/Documents/UW/BIOST_571_Final_Project/simulated_rnaseq_data_new.RData")
+load("/Users/amywatt1/Documents/UW/BIOST_571_Final_Project/simulated_rnaseq_data_50.RData")
 rnaseq_data_subject$counts[1:5, 1:5]
 head(rnaseq_data_subject$design)
 
@@ -65,7 +65,7 @@ v <- voom(d0, design)
 # Fitting linear models in limma
 fit <- lmFit(v, design)
 fit <- eBayes(fit) # Empirical Bayes smoothing of standard errors
-limma_res <- topTable(fit, adjust.method = "BH", sort.by = "none", n = Inf)
+limma_res <- topTable(fit, coef = "timefollowup:conditioncontrol", adjust.method = "BH", sort.by = "none", n = Inf)
 
 head(limma_res)
 
@@ -90,7 +90,7 @@ dds <- DESeqDataSetFromMatrix(countData = Y_adjusted,
 dds <- DESeq(dds)
 
 # get results
-de_res <- results(dds, tidy=TRUE)
+de_res <- results(dds, name="timefollowup.conditioncontrol", tidy=TRUE)
 rownames(de_res) <- de_res$row
 head(de_res)
 
@@ -117,7 +117,7 @@ expr_vst = assay(dds_vst)
 
 # Fit the Model
 fit.lmerSeq <- lmerSeq.fit(form = ~ time*condition + (1|subject_id),
-                           expr_mat = vst_expr,
+                           expr_mat = expr_vst,
                            sample_data = X,
                            REML = T)
 
@@ -170,10 +170,10 @@ results_padj <- edgeR_res$table["FDR"] %>%
     Row.names = NULL
   ) %>% 
   rename(
-    "FDR" = "edgeR_FDR", 
-    "adj.P.Val" = "limma_padj", 
-    "padj" = "deseq_padj", 
-    "p_val_adj" = "lmerseq_padj"
+    "edgeR_FDR" = "FDR",
+    "limma_padj" = "adj.P.Val",
+    "deseq_padj" = "padj",
+    "lmerseq_padj" = "p_val_adj"
   ) %>%
   as.data.frame()
 
@@ -206,37 +206,28 @@ results_p <- edgeR_res$table["PValue"] %>%
     Row.names = NULL
   ) %>% 
   rename(
-    "PValue" = "edgeR_p", 
-    "P.Value" = "limma_p", 
-    "pvalue" = "deseq_padj", 
-    "p_val_raw" = "lmerseq_p"
+    "edgeR_p" = "PValue", 
+    "limma_p" = "P.Value", 
+    "deseq_p" = "pvalue", 
+    "lmerseq_p" = "p_val_raw"
   ) %>%
   as.data.frame()
 
-
 ### calculate power for each method
-# Step 1: Subset the rows gene1 to gene500
-genes_to_select <- paste0("Gene", 1:500)
-power_df <- results_p[genes_to_select, ] 
-
-# Step 2: Apply the condition per column and count values <= 0.05
-power_count_values_per_column <- apply(power_df, 2, function(x) sum(x <= 0.05, na.rm = TRUE))
-
-# Output the result
-power_count_values_per_column / nrow(power_df)
+apply(results_p[paste0("Gene", 1:500), ], 2, function(x) mean(x <= 0.05, na.rm = TRUE))
+apply(results_padj[paste0("Gene", 1:500), ], 2, function(x) mean(x <= 0.05, na.rm = TRUE))
 
 ### calculate FDR for each method
-# Step 1: Subset the rows gene1 to gene500
-genes_to_select <- paste0("Gene", 501:nrow(results))
-fdr_df <- results_p[genes_to_select, ] 
+apply(results_p[paste0("Gene", 501:10000), ], 2, function(x) mean(x <= 0.05, na.rm = TRUE))
+apply(results_padj[paste0("Gene", 501:10000), ], 2, function(x) mean(x <= 0.05, na.rm = TRUE))
 
-# Step 2: Apply the condition per column and count values <= 0.05
-fdr_count_values_per_column <- apply(fdr_df, 2, function(x) sum(x <= 0.05, na.rm = TRUE))
-
-# Output the result
-fdr_count_values_per_column / nrow(fdr_df)
+### power and FDR for each method in a data table
+data.frame(
+  power = apply(results_p[paste0("Gene", 1:500), ], 2, function(x) mean(x <= 0.05, na.rm = TRUE)),
+  fdr = apply(results_p[paste0("Gene", 501:10000), ], 2, function(x) mean(x <= 0.05, na.rm = TRUE))
+)
 
 data.frame(
-  power = power_count_values_per_column / nrow(power_df),
-  fdr = fdr_count_values_per_column / nrow(fdr_df)
+  power = apply(results_padj[paste0("Gene", 1:500), ], 2, function(x) mean(x <= 0.05, na.rm = TRUE)),
+  fdr = apply(results_padj[paste0("Gene", 501:10000), ], 2, function(x) mean(x <= 0.05, na.rm = TRUE))
 )
